@@ -84,7 +84,7 @@ func (this *HipChatNotifier) Notify(evalContext *alerting.EvalContext) error {
 		return err
 	}
 
-	message := evalContext.GetNotificationTitle() + " in state " + evalContext.GetStateModel().Text + "<br><a href=" + ruleUrl + ">Check Dasboard</a>"
+	message := evalContext.GetNotificationTitle() + " in state " + evalContext.GetStateModel().Text + "<br><a href=" + ruleUrl + ">Check Dashboard</a>"
 	fields := make([]map[string]interface{}, 0)
 	message += "<br>"
 	for index, evt := range evalContext.EvalMatches {
@@ -129,7 +129,7 @@ func (this *HipChatNotifier) Notify(evalContext *alerting.EvalContext) error {
 		"title":       evalContext.GetNotificationTitle(),
 		"description": evalContext.GetNotificationTitle() + " in state " + evalContext.GetStateModel().Text,
 		"icon": map[string]interface{}{
-			"url": "http://grafana.org/assets/img/fav32.png",
+			"url": "https://grafana.com/assets/img/fav32.png",
 		},
 		"date": evalContext.EndTime.Unix(),
 	}

@@ -17,90 +17,87 @@ function($, _) {
   kbn.round_interval = function(interval) {
     switch (true) {
       // 0.015s
-      case (interval <= 15):
+      case (interval < 15):
         return 10;      // 0.01s
       // 0.035s
-      case (interval <= 35):
+      case (interval < 35):
         return 20;      // 0.02s
       // 0.075s
-      case (interval <= 75):
+      case (interval < 75):
         return 50;       // 0.05s
       // 0.15s
-      case (interval <= 150):
+      case (interval < 150):
         return 100;      // 0.1s
       // 0.35s
-      case (interval <= 350):
+      case (interval < 350):
         return 200;      // 0.2s
       // 0.75s
-      case (interval <= 750):
+      case (interval < 750):
         return 500;       // 0.5s
       // 1.5s
-      case (interval <= 1500):
+      case (interval < 1500):
         return 1000;      // 1s
       // 3.5s
-      case (interval <= 3500):
+      case (interval < 3500):
         return 2000;      // 2s
       // 7.5s
-      case (interval <= 7500):
+      case (interval < 7500):
         return 5000;      // 5s
       // 12.5s
-      case (interval <= 12500):
+      case (interval < 12500):
         return 10000;     // 10s
       // 17.5s
-      case (interval <= 17500):
+      case (interval < 17500):
         return 15000;     // 15s
       // 25s
-      case (interval <= 25000):
+      case (interval < 25000):
         return 20000;     // 20s
       // 45s
-      case (interval <= 45000):
+      case (interval < 45000):
         return 30000;     // 30s
       // 1.5m
-      case (interval <= 90000):
+      case (interval < 90000):
         return 60000;     // 1m
       // 3.5m
-      case (interval <= 210000):
+      case (interval < 210000):
         return 120000;    // 2m
       // 7.5m
-      case (interval <= 450000):
+      case (interval < 450000):
         return 300000;    // 5m
       // 12.5m
-      case (interval <= 750000):
+      case (interval < 750000):
         return 600000;    // 10m
       // 12.5m
-      case (interval <= 1050000):
+      case (interval < 1050000):
         return 900000;    // 15m
       // 25m
-      case (interval <= 1500000):
+      case (interval < 1500000):
         return 1200000;   // 20m
       // 45m
-      case (interval <= 2700000):
+      case (interval < 2700000):
         return 1800000;   // 30m
       // 1.5h
-      case (interval <= 5400000):
+      case (interval < 5400000):
         return 3600000;   // 1h
       // 2.5h
-      case (interval <= 9000000):
+      case (interval < 9000000):
         return 7200000;   // 2h
       // 4.5h
-      case (interval <= 16200000):
+      case (interval < 16200000):
         return 10800000;  // 3h
       // 9h
-      case (interval <= 32400000):
+      case (interval < 32400000):
         return 21600000;  // 6h
-      // 24h
-      case (interval <= 86400000):
+      // 1d
+      case (interval < 86400000):
         return 43200000;  // 12h
-      // 48h
-      case (interval <= 172800000):
-        return 86400000;  // 24h
       // 1w
-      case (interval <= 604800000):
-        return 86400000;  // 24h
+      case (interval < 604800000):
+        return 86400000;  // 1d
       // 3w
-      case (interval <= 1814400000):
+      case (interval < 1814400000):
         return 604800000; // 1w
-      // 2y
+      // 6w
       case (interval < 3628800000):
         return 2592000000; // 30d
       default:
@@ -134,7 +131,7 @@ function($, _) {
       return nummilliseconds + 'ms';
     }
 
-    return 'less then a millisecond'; //'just now' //or other string you like;
+    return 'less than a millisecond'; //'just now' //or other string you like;
   };
 
   kbn.to_percent = function(number,outof) {
@@ -163,21 +160,15 @@ function($, _) {
     ms: 0.001
   };
 
-  kbn.calculateInterval = function(range, resolution, userInterval) {
+  kbn.calculateInterval = function(range, resolution, lowLimitInterval) {
     var lowLimitMs = 1; // 1 millisecond default low limit
-    var intervalMs, lowLimitInterval;
+    var intervalMs;
 
-    if (userInterval) {
-      if (userInterval[0] === '>') {
-        lowLimitInterval = userInterval.slice(1);
-        lowLimitMs = kbn.interval_to_ms(lowLimitInterval);
+    if (lowLimitInterval) {
+      if (lowLimitInterval[0] === '>') {
+        lowLimitInterval = lowLimitInterval.slice(1);
       }
-      else {
-        return {
-          intervalMs: kbn.interval_to_ms(userInterval),
-          interval: userInterval,
-        };
-      }
+      lowLimitMs = kbn.interval_to_ms(lowLimitInterval);
     }
 
     intervalMs = kbn.round_interval((range.to.valueOf() - range.from.valueOf()) / resolution);
@@ -394,6 +385,10 @@ function($, _) {
     return "0x" + hexString;
   };
 
+  kbn.valueFormats.sci = function(value, decimals) {
+    return value.toExponential(decimals);
+  };
+
   // Currencies
   kbn.valueFormats.currencyUSD = kbn.formatBuilders.currency('$');
   kbn.valueFormats.currencyGBP = kbn.formatBuilders.currency('£');
@@ -459,10 +454,18 @@ function($, _) {
   kbn.valueFormats.humidity  = kbn.formatBuilders.fixedUnit('%H');
 
   // Pressure
-  kbn.valueFormats.pressurembar = kbn.formatBuilders.fixedUnit('mbar');
+  kbn.valueFormats.pressurebar  = kbn.formatBuilders.decimalSIPrefix('bar');
+  kbn.valueFormats.pressurembar = kbn.formatBuilders.decimalSIPrefix('bar', -1);
+  kbn.valueFormats.pressurekbar = kbn.formatBuilders.decimalSIPrefix('bar', 1);
   kbn.valueFormats.pressurehpa  = kbn.formatBuilders.fixedUnit('hPa');
   kbn.valueFormats.pressurehg   = kbn.formatBuilders.fixedUnit('"Hg');
   kbn.valueFormats.pressurepsi  = kbn.formatBuilders.scaledUnits(1000, [' psi', ' ksi', ' Mpsi']);
+
+  // Force
+  kbn.valueFormats.forceNm  = kbn.formatBuilders.decimalSIPrefix('Nm');
+  kbn.valueFormats.forcekNm = kbn.formatBuilders.decimalSIPrefix('Nm', 1);
+  kbn.valueFormats.forceN   = kbn.formatBuilders.decimalSIPrefix('N');
+  kbn.valueFormats.forcekN  = kbn.formatBuilders.decimalSIPrefix('N', 1);
 
   // Length
   kbn.valueFormats.lengthm  = kbn.formatBuilders.decimalSIPrefix('m');
@@ -480,6 +483,14 @@ function($, _) {
   kbn.valueFormats.litre  = kbn.formatBuilders.decimalSIPrefix('L');
   kbn.valueFormats.mlitre = kbn.formatBuilders.decimalSIPrefix('L', -1);
   kbn.valueFormats.m3     = kbn.formatBuilders.decimalSIPrefix('m3');
+  kbn.valueFormats.dm3    = kbn.formatBuilders.decimalSIPrefix('dm3');
+  kbn.valueFormats.gallons  = kbn.formatBuilders.fixedUnit('gal');
+
+  // Flow
+  kbn.valueFormats.flowgpm  = kbn.formatBuilders.fixedUnit('gpm');
+  kbn.valueFormats.flowcms  = kbn.formatBuilders.fixedUnit('cms');
+  kbn.valueFormats.flowcfs  = kbn.formatBuilders.fixedUnit('cfs');
+  kbn.valueFormats.flowcfm  = kbn.formatBuilders.fixedUnit('cfm');
 
   // Time
   kbn.valueFormats.hertz = kbn.formatBuilders.decimalSIPrefix('Hz');
@@ -687,15 +698,16 @@ function($, _) {
       {
         text: 'none',
         submenu: [
-          {text: 'none' ,             value: 'none'       },
-          {text: 'short',             value: 'short'      },
-          {text: 'percent (0-100)',   value: 'percent'    },
-          {text: 'percent (0.0-1.0)', value: 'percentunit'},
-          {text: 'Humidity (%H)',     value: 'humidity'   },
-          {text: 'ppm',               value: 'ppm'        },
-          {text: 'decibel',           value: 'dB'         },
-          {text: 'hexadecimal (0x)',  value: 'hex0x'      },
-          {text: 'hexadecimal',       value: 'hex'        },
+          {text: 'none' ,               value: 'none'       },
+          {text: 'short',               value: 'short'      },
+          {text: 'percent (0-100)',     value: 'percent'    },
+          {text: 'percent (0.0-1.0)',   value: 'percentunit'},
+          {text: 'Humidity (%H)',       value: 'humidity'   },
+          {text: 'ppm',                 value: 'ppm'        },
+          {text: 'decibel',             value: 'dB'         },
+          {text: 'hexadecimal (0x)',    value: 'hex0x'      },
+          {text: 'hexadecimal',         value: 'hex'        },
+          {text: 'scientific notation', value: 'sci'        },
         ]
       },
       {
@@ -790,9 +802,11 @@ function($, _) {
       {
         text: 'volume',
         submenu: [
-          {text: 'millilitre',  value: 'mlitre'},
-          {text: 'litre',       value: 'litre' },
-          {text: 'cubic metre', value: 'm3'    },
+          {text: 'millilitre',      value: 'mlitre' },
+          {text: 'litre',           value: 'litre'  },
+          {text: 'cubic metre',     value: 'm3'     },
+          {text: 'cubic decimetre', value: 'dm3'    },
+          {text: 'gallons',         value: 'gallons'},
         ]
       },
       {
@@ -818,7 +832,7 @@ function($, _) {
       {
         text: 'temperature',
         submenu: [
-          {text: 'Celcius (°C)',    value: 'celsius'     },
+          {text: 'Celsius (°C)',    value: 'celsius'     },
           {text: 'Farenheit (°F)',  value: 'farenheit'   },
           {text: 'Kelvin (K)',      value: 'kelvin'      },
         ]
@@ -827,9 +841,29 @@ function($, _) {
         text: 'pressure',
         submenu: [
           {text: 'Millibars',         value: 'pressurembar'},
+          {text: 'Bars',              value: 'pressurebar' },
+          {text: 'Kilobars',          value: 'pressurekbar'},
           {text: 'Hectopascals',      value: 'pressurehpa' },
           {text: 'Inches of mercury', value: 'pressurehg'  },
           {text: 'PSI',               value: 'pressurepsi' },
+        ]
+      },
+      {
+        text: 'force',
+        submenu: [
+          {text: 'Newton-meters (Nm)',      value: 'forceNm'  },
+          {text: 'Kilonewton-meters (kNm)', value: 'forcekNm' },
+          {text: 'Newtons (N)',             value: 'forceN'   },
+          {text: 'Kilonewtons (kN)',        value: 'forcekN'  },
+        ]
+      },
+      {
+        text: 'flow',
+        submenu: [
+          {text: 'Gallons/min (gpm)',       value: 'flowgpm'  },
+          {text: 'Cubic meters/sec (cms)',  value: 'flowcms'  },
+          {text: 'Cubic feet/sec (cfs)',    value: 'flowcfs'  },
+          {text: 'Cubic feet/min (cfm)',    value: 'flowcfm'  },
         ]
       }
     ];

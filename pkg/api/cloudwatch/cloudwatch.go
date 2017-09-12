@@ -3,7 +3,9 @@ package cloudwatch
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awsutil"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
+	"github.com/aws/aws-sdk-go/aws/credentials/endpointcreds"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
@@ -36,6 +39,7 @@ type cwRequest struct {
 type datasourceInfo struct {
 	Profile       string
 	Region        string
+	AuthType      string
 	AssumeRoleArn string
 	Namespace     string
 
@@ -44,6 +48,7 @@ type datasourceInfo struct {
 }
 
 func (req *cwRequest) GetDatasourceInfo() *datasourceInfo {
+	authType := req.DataSource.JsonData.Get("authType").MustString()
 	assumeRoleArn := req.DataSource.JsonData.Get("assumeRoleArn").MustString()
 	accessKey := ""
 	secretKey := ""
@@ -58,6 +63,7 @@ func (req *cwRequest) GetDatasourceInfo() *datasourceInfo {
 	}
 
 	return &datasourceInfo{
+		AuthType:      authType,
 		AssumeRoleArn: assumeRoleArn,
 		Region:        req.Region,
 		Profile:       req.DataSource.Database,
@@ -107,26 +113,33 @@ func getCredentials(dsInfo *datasourceInfo) (*credentials.Credentials, error) {
 	sessionToken := ""
 	var expiration *time.Time
 	expiration = nil
-	if strings.Index(dsInfo.AssumeRoleArn, "arn:aws:iam:") == 0 {
+	if dsInfo.AuthType == "arn" && strings.Index(dsInfo.AssumeRoleArn, "arn:aws:iam:") == 0 {
 		params := &sts.AssumeRoleInput{
 			RoleArn:         aws.String(dsInfo.AssumeRoleArn),
 			RoleSessionName: aws.String("GrafanaSession"),
 			DurationSeconds: aws.Int64(900),
 		}
 
-		stsSess := session.New()
+		stsSess, err := session.NewSession()
+		if err != nil {
+			return nil, err
+		}
 		stsCreds := credentials.NewChainCredentials(
 			[]credentials.Provider{
 				&credentials.EnvProvider{},
 				&credentials.SharedCredentialsProvider{Filename: "", Profile: dsInfo.Profile},
-				&ec2rolecreds.EC2RoleProvider{Client: ec2metadata.New(stsSess), ExpiryWindow: 5 * time.Minute},
+				remoteCredProvider(stsSess),
 			})
 		stsConfig := &aws.Config{
 			Region:      aws.String(dsInfo.Region),
 			Credentials: stsCreds,
 		}
 
-		svc := sts.New(session.New(stsConfig), stsConfig)
+		sess, err := session.NewSession(stsConfig)
+		if err != nil {
+			return nil, err
+		}
+		svc := sts.New(sess, stsConfig)
 		resp, err := svc.AssumeRole(params)
 		if err != nil {
 			return nil, err
@@ -139,7 +152,10 @@ func getCredentials(dsInfo *datasourceInfo) (*credentials.Credentials, error) {
 		}
 	}
 
-	sess := session.New()
+	sess, err := session.NewSession()
+	if err != nil {
+		return nil, err
+	}
 	creds := credentials.NewChainCredentials(
 		[]credentials.Provider{
 			&credentials.StaticProvider{Value: credentials.Value{
@@ -153,7 +169,7 @@ func getCredentials(dsInfo *datasourceInfo) (*credentials.Credentials, error) {
 				SecretAccessKey: dsInfo.SecretKey,
 			}},
 			&credentials.SharedCredentialsProvider{Filename: "", Profile: dsInfo.Profile},
-			&ec2rolecreds.EC2RoleProvider{Client: ec2metadata.New(sess), ExpiryWindow: 5 * time.Minute},
+			remoteCredProvider(sess),
 		})
 
 	credentialCacheLock.Lock()
@@ -164,6 +180,30 @@ func getCredentials(dsInfo *datasourceInfo) (*credentials.Credentials, error) {
 	credentialCacheLock.Unlock()
 
 	return creds, nil
+}
+
+func remoteCredProvider(sess *session.Session) credentials.Provider {
+	ecsCredURI := os.Getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")
+
+	if len(ecsCredURI) > 0 {
+		return ecsCredProvider(sess, ecsCredURI)
+	}
+	return ec2RoleProvider(sess)
+}
+
+func ecsCredProvider(sess *session.Session, uri string) credentials.Provider {
+	const host = `169.254.170.2`
+
+	c := ec2metadata.New(sess)
+	return endpointcreds.NewProviderClient(
+		c.Client.Config,
+		c.Client.Handlers,
+		fmt.Sprintf("http://%s%s", host, uri),
+		func(p *endpointcreds.Provider) { p.ExpiryWindow = 5 * time.Minute })
+}
+
+func ec2RoleProvider(sess *session.Session) credentials.Provider {
+	return &ec2rolecreds.EC2RoleProvider{Client: ec2metadata.New(sess), ExpiryWindow: 5 * time.Minute}
 }
 
 func getAwsConfig(req *cwRequest) (*aws.Config, error) {
@@ -185,7 +225,12 @@ func handleGetMetricStatistics(req *cwRequest, c *middleware.Context) {
 		c.JsonApiErr(500, "Unable to call AWS API", err)
 		return
 	}
-	svc := cloudwatch.New(session.New(cfg), cfg)
+	sess, err := session.NewSession(cfg)
+	if err != nil {
+		c.JsonApiErr(500, "Unable to call AWS API", err)
+		return
+	}
+	svc := cloudwatch.New(sess, cfg)
 
 	reqParam := &struct {
 		Parameters struct {
@@ -232,7 +277,12 @@ func handleListMetrics(req *cwRequest, c *middleware.Context) {
 		c.JsonApiErr(500, "Unable to call AWS API", err)
 		return
 	}
-	svc := cloudwatch.New(session.New(cfg), cfg)
+	sess, err := session.NewSession(cfg)
+	if err != nil {
+		c.JsonApiErr(500, "Unable to call AWS API", err)
+		return
+	}
+	svc := cloudwatch.New(sess, cfg)
 
 	reqParam := &struct {
 		Parameters struct {
@@ -273,7 +323,12 @@ func handleDescribeAlarms(req *cwRequest, c *middleware.Context) {
 		c.JsonApiErr(500, "Unable to call AWS API", err)
 		return
 	}
-	svc := cloudwatch.New(session.New(cfg), cfg)
+	sess, err := session.NewSession(cfg)
+	if err != nil {
+		c.JsonApiErr(500, "Unable to call AWS API", err)
+		return
+	}
+	svc := cloudwatch.New(sess, cfg)
 
 	reqParam := &struct {
 		Parameters struct {
@@ -316,7 +371,12 @@ func handleDescribeAlarmsForMetric(req *cwRequest, c *middleware.Context) {
 		c.JsonApiErr(500, "Unable to call AWS API", err)
 		return
 	}
-	svc := cloudwatch.New(session.New(cfg), cfg)
+	sess, err := session.NewSession(cfg)
+	if err != nil {
+		c.JsonApiErr(500, "Unable to call AWS API", err)
+		return
+	}
+	svc := cloudwatch.New(sess, cfg)
 
 	reqParam := &struct {
 		Parameters struct {
@@ -360,7 +420,12 @@ func handleDescribeAlarmHistory(req *cwRequest, c *middleware.Context) {
 		c.JsonApiErr(500, "Unable to call AWS API", err)
 		return
 	}
-	svc := cloudwatch.New(session.New(cfg), cfg)
+	sess, err := session.NewSession(cfg)
+	if err != nil {
+		c.JsonApiErr(500, "Unable to call AWS API", err)
+		return
+	}
+	svc := cloudwatch.New(sess, cfg)
 
 	reqParam := &struct {
 		Parameters struct {
@@ -396,7 +461,12 @@ func handleDescribeInstances(req *cwRequest, c *middleware.Context) {
 		c.JsonApiErr(500, "Unable to call AWS API", err)
 		return
 	}
-	svc := ec2.New(session.New(cfg), cfg)
+	sess, err := session.NewSession(cfg)
+	if err != nil {
+		c.JsonApiErr(500, "Unable to call AWS API", err)
+		return
+	}
+	svc := ec2.New(sess, cfg)
 
 	reqParam := &struct {
 		Parameters struct {

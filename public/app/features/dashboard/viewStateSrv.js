@@ -2,8 +2,9 @@ define([
   'angular',
   'lodash',
   'jquery',
+  'app/core/config'
 ],
-function (angular, _, $) {
+function (angular, _, $, config) {
   'use strict';
 
   var module = angular.module('grafana.services');
@@ -18,12 +19,6 @@ function (angular, _, $) {
       self.panelScopes = [];
       self.$scope = $scope;
       self.dashboard = $scope.dashboard;
-
-      $scope.exitFullscreen = function() {
-        if (self.state.fullscreen) {
-          self.update({ fullscreen: false });
-        }
-      };
 
       $scope.onAppEvent('$routeUpdate', function() {
         var urlState = self.getQueryStringState();
@@ -40,6 +35,9 @@ function (angular, _, $) {
         self.registerPanel(payload.scope);
       });
 
+      // this marks changes to location during this digest cycle as not to add history item
+      // dont want url changes like adding orgId to add browser history
+      $location.replace();
       this.update(this.getQueryStringState());
       this.expandRowForPanel();
     }
@@ -63,6 +61,7 @@ function (angular, _, $) {
       state.fullscreen = state.fullscreen ? true : null;
       state.edit =  (state.edit === "true" || state.edit === true) || null;
       state.editview = state.editview || null;
+      state.orgId = config.bootData.user.orgId;
       return state;
     };
 

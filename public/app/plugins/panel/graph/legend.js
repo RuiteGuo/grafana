@@ -48,6 +48,7 @@ function (angular, _, $) {
               element: el[0],
               position: 'bottom center',
               template: '<gf-color-picker></gf-color-picker>',
+              openOn: 'hover',
               model: {
                 series: series,
                 toggleAxis: function() {
@@ -65,7 +66,9 @@ function (angular, _, $) {
           var el = $(e.currentTarget);
           var index = getSeriesIndexForElement(el);
           var seriesInfo = seriesList[index];
+          var scrollPosition = $($container.children('tbody')).scrollTop();
           ctrl.toggleSeries(seriesInfo, e);
+          $($container.children('tbody')).scrollTop(scrollPosition);
         }
 
         function sortLegend(e) {

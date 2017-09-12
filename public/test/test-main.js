@@ -38,7 +38,10 @@
       "jquery.flot.time": "vendor/flot/jquery.flot.time",
       "jquery.flot.crosshair": "vendor/flot/jquery.flot.crosshair",
       "jquery.flot.fillbelow": "vendor/flot/jquery.flot.fillbelow",
-      "jquery.flot.gauge": "vendor/flot/jquery.flot.gauge"
+      "jquery.flot.gauge": "vendor/flot/jquery.flot.gauge",
+      "d3": "vendor/d3/d3.js",
+      "jquery.flot.dashes": "vendor/flot/jquery.flot.dashes",
+      "ace": "vendor/npm/ace-builds/src-noconflict/ace",
     },
 
     packages: {
@@ -70,6 +73,10 @@
       'vendor/npm/mousetrap/mousetrap.js': {
         format: 'global',
         exports: 'Mousetrap'
+      },
+      'vendor/npm/ace-builds/src-noconflict/ace.js': {
+        format: 'global',
+        exports: 'ace'
       },
     }
   });

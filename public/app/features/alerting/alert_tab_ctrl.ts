@@ -79,18 +79,9 @@ export class AlertTabCtrl {
   getAlertHistory() {
     this.backendSrv.get(`/api/annotations?dashboardId=${this.panelCtrl.dashboard.id}&panelId=${this.panel.id}&limit=50`).then(res => {
       this.alertHistory = _.map(res, ah => {
-        ah.time = moment(ah.time).format('MMM D, YYYY HH:mm:ss');
+        ah.time = this.dashboardSrv.getCurrent().formatDate(ah.time, 'MMM D, YYYY HH:mm:ss');
         ah.stateModel = alertDef.getStateDisplayModel(ah.newState);
-        ah.metrics = alertDef.joinEvalMatches(ah.data, ', ');
-
-        if (ah.data.errorMessage) {
-          ah.metrics = "Error: " + ah.data.errorMessage;
-        }
-
-        if (ah.data.no_data) {
-          ah.metrics = "(due to no data)";
-        }
-
+        ah.info = alertDef.getAlertAnnotationInfo(ah);
         return ah;
       });
     });
@@ -105,6 +96,7 @@ export class AlertTabCtrl {
       case "pagerduty": return "fa fa-bullhorn";
       case "opsgenie": return "fa fa-bell";
       case "hipchat": return "fa fa-mail-forward";
+      case "pushover": return "fa fa-mobile";
     }
   }
 

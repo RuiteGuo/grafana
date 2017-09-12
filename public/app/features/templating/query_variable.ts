@@ -48,7 +48,7 @@ export class QueryVariable implements Variable {
   };
 
   /** @ngInject **/
-  constructor(private model, private datasourceSrv, private templateSrv, private variableSrv, private $q)  {
+  constructor(private model, private datasourceSrv, private templateSrv, private variableSrv, private $q, private timeSrv)  {
     // copy model properties to this instance
     assignModelProperties(this, model, this.defaults);
   }
@@ -89,7 +89,7 @@ export class QueryVariable implements Variable {
 
   updateTags(datasource) {
     if (this.useTags) {
-      return datasource.metricFindQuery(this.tagsQuery).then(results => {
+      return this.metricFindQuery(datasource, this.tagsQuery).then(results => {
         this.tags = [];
         for (var i = 0; i < results.length; i++) {
           this.tags.push(results[i].text);
@@ -106,7 +106,7 @@ export class QueryVariable implements Variable {
   getValuesForTag(tagKey) {
     return this.datasourceSrv.get(this.datasource).then(datasource => {
       var query = this.tagValuesQuery.replace('$tag', tagKey);
-      return datasource.metricFindQuery(query).then(function (results) {
+      return this.metricFindQuery(datasource, query).then(function (results) {
         return _.map(results, function(value) {
           return value.text;
         });
@@ -115,7 +115,7 @@ export class QueryVariable implements Variable {
   }
 
   updateOptionsFromMetricFindQuery(datasource) {
-    return datasource.metricFindQuery(this.query).then(results => {
+    return this.metricFindQuery(datasource, this.query).then(results => {
       this.options = this.metricNamesToVariableValues(results);
       if (this.includeAll) {
         this.addAllOption();
@@ -125,6 +125,16 @@ export class QueryVariable implements Variable {
       }
       return datasource;
     });
+  }
+
+  metricFindQuery(datasource, query) {
+    var options = {range: undefined, variable: this};
+
+    if (this.refresh === 2) {
+      options.range = this.timeSrv.timeRange();
+    }
+
+    return datasource.metricFindQuery(query, options);
   }
 
   addAllOption() {
@@ -138,11 +148,15 @@ export class QueryVariable implements Variable {
     if (this.regex) {
       regex = kbn.stringToJsRegex(this.templateSrv.replace(this.regex, {}, 'regex'));
     }
-
     for (i = 0; i < metricNames.length; i++) {
       var item = metricNames[i];
-      var value = item.value || item.text;
-      var text = item.text || item.value;
+      var text = item.text === undefined || item.text === null
+        ? item.value
+        : item.text;
+
+      var value = item.value === undefined || item.value === null
+        ? item.text
+        : item.value;
 
       if (_.isNumber(value)) {
         value = value.toString();
@@ -179,13 +193,13 @@ export class QueryVariable implements Variable {
     if (sortType === 1) {
       options = _.sortBy(options, 'text');
     } else if (sortType === 2) {
-      options = _.sortBy(options, function(opt) {
+      options = _.sortBy(options, (opt) => {
         var matches = opt.text.match(/.*?(\d+).*/);
-  if (!matches) {
-    return 0;
-  } else {
-    return parseInt(matches[1], 10);
-  }
+        if (!matches || matches.length < 2) {
+          return -1;
+        } else {
+          return parseInt(matches[1], 10);
+        }
       });
     }
 

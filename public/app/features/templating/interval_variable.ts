@@ -54,13 +54,14 @@ export class IntervalVariable implements Variable {
       this.options.unshift({ text: 'auto', value: '$__auto_interval' });
     }
 
-    var res = kbn.calculateInterval(this.timeSrv.timeRange(), this.auto_count, (this.auto_min ? ">"+this.auto_min : null));
+    var res = kbn.calculateInterval(this.timeSrv.timeRange(), this.auto_count, this.auto_min);
     this.templateSrv.setGrafanaVariable('$__auto_interval', res.interval);
   }
 
   updateOptions() {
-   // extract options in comma separated string
-    this.options = _.map(this.query.split(/[,]+/), function(text) {
+    // extract options between quotes and/or comma
+    this.options = _.map(this.query.match(/(["'])(.*?)\1|\w+/g), function(text) {
+      text = text.replace(/["']+/g, '');
       return {text: text.trim(), value: text.trim()};
     });
 

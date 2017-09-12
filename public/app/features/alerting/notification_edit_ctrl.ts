@@ -7,6 +7,7 @@ import {appEvents, coreModule} from 'app/core/core';
 
 export class AlertNotificationEditCtrl {
   theForm: any;
+  navModel: any;
   testSeverity = "critical";
   notifiers: any;
   notifierTemplateId: string;
@@ -17,12 +18,15 @@ export class AlertNotificationEditCtrl {
     settings: {
       httpMethod: 'POST',
       autoResolve: true,
+      uploadImage: true,
     },
     isDefault: false
   };
 
   /** @ngInject */
-  constructor(private $routeParams, private backendSrv, private $location, private $templateCache) {
+  constructor(private $routeParams, private backendSrv, private $location, private $templateCache, navModelSrv) {
+    this.navModel = navModelSrv.getAlertingNav();
+
     this.backendSrv.get(`/api/alert-notifiers`).then(notifiers => {
       this.notifiers = notifiers;
 
@@ -32,7 +36,7 @@ export class AlertNotificationEditCtrl {
       }
 
       if (!this.$routeParams.id) {
-        return this.model;
+        return _.defaults(this.model, this.defaults);
       }
 
       return this.backendSrv.get(`/api/alert-notifications/${this.$routeParams.id}`).then(result => {
@@ -84,7 +88,7 @@ export class AlertNotificationEditCtrl {
 
     this.backendSrv.post(`/api/alert-notifications/test`, payload)
     .then(res => {
-      appEvents.emit('alert-succes', ['Test notification sent', '']);
+      appEvents.emit('alert-success', ['Test notification sent', '']);
     });
   }
 }

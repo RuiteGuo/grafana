@@ -1,5 +1,5 @@
 define([
-  './query_def'
+  './query_def',
 ],
 function (queryDef) {
   'use strict';
@@ -79,12 +79,26 @@ function (queryDef) {
     return esAgg;
   };
 
+  ElasticQueryBuilder.prototype.getHistogramAgg = function(aggDef) {
+    var esAgg = {};
+    var settings = aggDef.settings || {};
+    esAgg.interval = settings.interval;
+    esAgg.field = aggDef.field;
+    esAgg.min_doc_count = settings.min_doc_count || 0;
+
+    if (settings.missing) {
+      esAgg.missing = settings.missing;
+    }
+    return esAgg;
+  };
+
   ElasticQueryBuilder.prototype.getFiltersAgg = function(aggDef) {
     var filterObj = {};
     for (var i = 0; i < aggDef.settings.filters.length; i++) {
       var query = aggDef.settings.filters[i].query;
-
-      filterObj[query] = {
+      var label = aggDef.settings.filters[i].label;
+      label = label === '' || label === undefined ? query : label;
+      filterObj[label] = {
         query_string: {
           query: query,
           analyze_wildcard: true
@@ -95,8 +109,8 @@ function (queryDef) {
     return filterObj;
   };
 
-  ElasticQueryBuilder.prototype.documentQuery = function(query) {
-    query.size = 500;
+  ElasticQueryBuilder.prototype.documentQuery = function(query, size) {
+    query.size = size;
     query.sort = {};
     query.sort[this.timeField] = {order: 'desc', unmapped_type: 'boolean'};
 
@@ -105,8 +119,12 @@ function (queryDef) {
       query.fields = ["*", "_source"];
     }
 
-    query.script_fields = {},
-    query.fielddata_fields = [this.timeField];
+    query.script_fields = {};
+    if (this.esVersion < 5) {
+      query.fielddata_fields = [this.timeField];
+    } else {
+      query.docvalue_fields = [this.timeField];
+    }
     return query;
   };
 
@@ -115,12 +133,39 @@ function (queryDef) {
       return;
     }
 
-    var i, filter, condition;
+    var i, filter, condition, queryCondition;
+
     for (i = 0; i < adhocFilters.length; i++) {
       filter = adhocFilters[i];
       condition = {};
       condition[filter.key] = filter.value;
-      query.query.bool.filter.push({"term": condition});
+      queryCondition = {};
+      queryCondition[filter.key] = {query: filter.value};
+
+      switch(filter.operator){
+        case "=":
+          if (!query.query.bool.must) { query.query.bool.must = []; }
+          query.query.bool.must.push({match_phrase: queryCondition});
+          break;
+        case "!=":
+          if (!query.query.bool.must_not) { query.query.bool.must_not = []; }
+          query.query.bool.must_not.push({match_phrase: queryCondition});
+          break;
+        case "<":
+          condition[filter.key] = {"lt": filter.value};
+          query.query.bool.filter.push({"range": condition});
+          break;
+        case ">":
+          condition[filter.key] = {"gt": filter.value};
+          query.query.bool.filter.push({"range": condition});
+          break;
+        case "=~":
+          query.query.bool.filter.push({"regexp": condition});
+          break;
+        case "!~":
+          query.query.bool.filter.push({"bool": {"must_not": {"regexp": condition}}});
+          break;
+      }
     }
   };
 
@@ -154,10 +199,12 @@ function (queryDef) {
     // handle document query
     if (target.bucketAggs.length === 0) {
       metric = target.metrics[0];
-      if (metric && metric.type !== 'raw_document') {
+      if (!metric || metric.type !== 'raw_document') {
         throw {message: 'Invalid query'};
       }
-      return this.documentQuery(query, target);
+
+      var size = (metric.settings && metric.settings.size) || 500;
+      return this.documentQuery(query, size);
     }
 
     nestedAggs = query;
@@ -169,6 +216,10 @@ function (queryDef) {
       switch(aggDef.type) {
         case 'date_histogram': {
           esAgg["date_histogram"] = this.getDateHistogramAgg(aggDef);
+          break;
+        }
+        case 'histogram': {
+          esAgg["histogram"] = this.getHistogramAgg(aggDef);
           break;
         }
         case 'filters': {
@@ -242,10 +293,12 @@ function (queryDef) {
         }
       });
     }
+
     var size = 500;
-    if(queryDef.size){
+    if (queryDef.size) {
       size = queryDef.size;
     }
+
     query.aggs =  {
       "1": {
         "terms": {
