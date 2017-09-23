@@ -43,6 +43,7 @@ class MetricsPanelCtrl extends PanelCtrl {
     this.timeSrv = $injector.get('timeSrv');
     this.templateSrv = $injector.get('templateSrv');
     this.scope = $scope;
+    this.panel.suppress = false;
 
     if (!this.panel.targets) {
       this.panel.targets = [{}];
@@ -118,6 +119,9 @@ class MetricsPanelCtrl extends PanelCtrl {
       }
 
       this.events.emit('data-error', err);
+      if (this.panel.suppressEmpty && !this.dashboard.showSuppressed) {
+        this.panel.suppress = true;
+      }
       console.log('Panel data error:', err);
     });
   }
@@ -252,6 +256,18 @@ class MetricsPanelCtrl extends PanelCtrl {
     if (!result || !result.data) {
       console.log('Data source query result invalid, missing data field:', result);
       result = {data: []};
+    }
+    if (this.fullscreen) {
+      this.panel.suppress = false;
+    }
+
+    var non_null_length = result.data[0]['datapoints'].filter(function(value,index) {return value[0] > 0;}).length;
+    console.log(non_null_length);
+    if (this.panel.suppressEmpty && ( result.data.length === 0 || non_null_length === 0 ) && !this.dashboard.showSuppressed) {
+      console.log('suppressing');
+      this.panel.suppress = true;
+    } else {
+      this.panel.suppress = false;
     }
 
     this.events.emit('data-received', result.data);

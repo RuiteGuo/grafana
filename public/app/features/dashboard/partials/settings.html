@@ -53,13 +53,13 @@
                         label="Editable"
                         tooltip="Uncheck, then save and reload to disable all dashboard editing"
                         checked="dashboard.editable"
-                        label-class="width-11">
+                        label-class="width-14">
         </gf-form-switch>
 				<gf-form-switch class="gf-form"
                         label="Hide Controls"
                         tooltip="Hide row controls. Shortcut: CTRL+H or CMD+H"
                         checked="dashboard.hideControls"
-                        label-class="width-11">
+                        label-class="width-14">
         </gf-form-switch>
       </div>
     </div>
@@ -76,6 +76,12 @@
         <div class="gf-form-select-wrapper">
           <select ng-model="dashboard.graphTooltip" class='gf-form-input' ng-options="f.value as f.text for f in [{value: 0, text: 'Default'}, {value: 1, text: 'Shared crosshair'},{value: 2, text: 'Shared Tooltip'}]"></select>
         </div>
+	<gf-form-switch class="gf-form"
+		        label="Show suppressed panels"
+		        tooltip="Show panels even when suppressed, so they can be changed"
+		        checked="dashboard.showSuppressed"
+		        label-class="width-14">
+        </gf-form-switch>
       </div>
     </div>
 
