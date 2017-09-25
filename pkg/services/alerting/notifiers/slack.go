@@ -205,17 +205,16 @@ func UploadToSlack(url, file, token, recipient string) (err error) {
 	if err != nil {
 		panic(err)
 	}
-	//err = w.WriteField("token", token)
-	//if err != nil {
-	//	panic(err)
-	//}
+	err = w.WriteField("token", token)
+	if err != nil {
+		panic(err)
+	}
 	w.Close()
 
 	req, err := http.NewRequest("POST", url, &b)
 	if err != nil {
 		return
 	}
-	// Don't forget to set the content type, this will contain the boundary.
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	req.Header.Add("Authorization", "auth_token=\""+token+"\"")
 	client := &http.Client{}
