@@ -1,7 +1,13 @@
 package notifiers
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"os"
 	"time"
 
 	"github.com/grafana/grafana/pkg/bus"
@@ -15,7 +21,7 @@ func init() {
 	alerting.RegisterNotifier(&alerting.NotifierPlugin{
 		Type:        "slack",
 		Name:        "Slack",
-		Description: "Sends notifications using Grafana server configured STMP settings",
+		Description: "Sends notifications to Slack via Slack Webhooks",
 		Factory:     NewSlackNotifier,
 		OptionsTemplate: `
       <h3 class="page-heading">Slack settings</h3>
@@ -45,6 +51,17 @@ func init() {
           Mention a user or a group using @ when notifying in a channel
         </info-popover>
       </div>
+      <div class="gf-form max-width-30">
+        <span class="gf-form-label width-6">Token</span>
+        <input type="text"
+          class="gf-form-input max-width-30"
+          ng-model="ctrl.model.settings.token"
+          data-placement="right">
+        </input>
+        <info-popover mode="right-absolute">
+          Token for uploading files directly to Slack. If blank, Grafana will default to other upload providers.
+        </info-popover>
+      </div>
     `,
 	})
 
@@ -58,11 +75,13 @@ func NewSlackNotifier(model *m.AlertNotification) (alerting.Notifier, error) {
 
 	recipient := model.Settings.Get("recipient").MustString()
 	mention := model.Settings.Get("mention").MustString()
+	token := model.Settings.Get("token").MustString()
 
 	return &SlackNotifier{
 		NotifierBase: NewNotifierBase(model.Id, model.IsDefault, model.Name, model.Type, model.Settings),
 		Url:          url,
 		Recipient:    recipient,
+		Token:        token,
 		Mention:      mention,
 		log:          log.New("alerting.notifier.slack"),
 	}, nil
@@ -72,6 +91,7 @@ type SlackNotifier struct {
 	NotifierBase
 	Url       string
 	Recipient string
+	Token     string
 	Mention   string
 	log       log.Logger
 }
@@ -120,7 +140,6 @@ func (this *SlackNotifier) Notify(evalContext *alerting.EvalContext) error {
 				"title_link":  ruleUrl,
 				"text":        message,
 				"fields":      fields,
-				"image_url":   evalContext.ImagePublicUrl,
 				"footer":      "Grafana v" + setting.BuildVersion,
 				"footer_icon": "https://grafana.com/assets/img/fav32.png",
 				"ts":          time.Now().Unix(),
@@ -133,14 +152,76 @@ func (this *SlackNotifier) Notify(evalContext *alerting.EvalContext) error {
 	if this.Recipient != "" {
 		body["channel"] = this.Recipient
 	}
-
+	this.log.Info("token: ", this.Token)
+	if this.Token == "" {
+		body["image_url"] = evalContext.ImagePublicUrl
+	}
 	data, _ := json.Marshal(&body)
 	cmd := &m.SendWebhookSync{Url: this.Url, Body: string(data)}
-
 	if err := bus.DispatchCtx(evalContext.Ctx, cmd); err != nil {
 		this.log.Error("Failed to send slack notification", "error", err, "webhook", this.Name)
 		return err
 	}
+	if this.Token != "" {
+		fileUploadUrl := "https://slack.com/api/files.upload"
+		if evalContext.ImageOnDiskPath == "" {
+                    evalContext.ImageOnDiskPath = "/home/matthew/mixed_styles.png"
+                }
+		this.log.Info("Executing slack upload: ", this.Token)
+
+		err = UploadToSlack(fileUploadUrl, evalContext.ImageOnDiskPath, this.Token, this.Recipient)
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	return nil
+}
+
+func UploadToSlack(url, file, token, recipient string) (err error) {
+	// Slack requires all POSTs to files.upload to present 
+        // an "application/x-www-form-urlencoded" encoded querystring 
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	// Add the generated image file
+	f, err := os.Open(file)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fw, err := w.CreateFormFile("file", file)
+	if err != nil {
+		panic(err)
+	}
+	_, err = io.Copy(fw, f)
+	if err != nil {
+		panic(err)
+	}
+	err = w.WriteField("token", token)
+	if err != nil {
+		panic(err)
+	}
+	err = w.WriteField("channels", recipient)
+	if err != nil {
+		panic(err)
+	}
+	//err = w.WriteField("token", token)
+	//if err != nil {
+	//	panic(err)
+	//}
+	w.Close()
+
+	req, err := http.NewRequest("POST", url, &b)
+	if err != nil {
+		return
+	}
+	// Don't forget to set the content type, this will contain the boundary.
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Add("Authorization", "auth_token=\""+token+"\"")
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if res.StatusCode != http.StatusOK {
+		err = fmt.Errorf("bad status: %s", res.Status)
+	}
+	return
 }
